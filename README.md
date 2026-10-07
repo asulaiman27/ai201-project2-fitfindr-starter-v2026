@@ -13,8 +13,8 @@
 > python app.py ask 'vintage graphic tee under $30'
 > ```
 >
-> All three tools are stubs, so that last command will do nothing useful yet.
-> That's the starting position.
+> FitFindr searches secondhand listings, suggests outfits from a saved wardrobe,
+> and writes a fit-card caption for a selected item.
 >
 > **The rest of this file is your submission.** Fill it in as you go.
 
@@ -39,9 +39,11 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
-
+FitFindr takes a natural-language request for a secondhand clothing item and
+searches listings by description keywords, with optional size and price filters.
+When it finds a match, it chooses the top listing, suggests outfits using the
+user's wardrobe, and creates a short fit-card caption. If nothing matches, it
+stops and tells the user what they could change.
 
 ---
 
@@ -78,6 +80,13 @@
 - **Returns:** A two-to-four-sentence caption that mentions the item, its price, and its platform once each, and describes its vibe.
 - **When it has nothing:** If `outfit` is empty or whitespace, returns a descriptive fallback message instead of raising an error.
 
+### `compare_prices` — stretch tool
+
+- **What it does:** Summarizes the prices among the current search results so the user can compare the selected item with similar listings.
+- **Inputs:** `listings` (list[dict], the results returned by `search_listings`).
+- **Returns:** A dict with `count` (int), `lowest` and `highest` (listing dicts), and `average` (float).
+- **When it has nothing:** Returns `{"count": 0, "lowest": None, "highest": None, "average": None}` for an empty list.
+
 ---
 
 ## Planning Loop
@@ -97,9 +106,13 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**Second branch (stretch):** If the wardrobe has items, request combinations using those owned pieces. If it is empty, request general styling advice and mark the session mode as `general`.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**How the query is parsed:** Regular expressions extract an optional size and price ceiling; the remaining words become the search description.
+
+**What moves through the session:** `parsed` → `search_results` → `selected_item` → `outfit_suggestion` → `fit_card`. Each tool's result is stored in the session and read from there for the next step.
+
+**Style memory (stretch, planned before implementation):** With `remember_wardrobe=True`, save a non-empty wardrobe in the ignored `.cache/` folder. On a later opted-in run with an empty wardrobe, load the saved wardrobe and use its pieces in outfit suggestions.
 
 ---
 
@@ -113,25 +126,61 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
+Found:    Graphic Tee — 2003 Tour Bootleg Style — $24.0 on depop
 
+Outfit:   Here are two ways to style your 2003 tour bootleg tee using items already in your closet:
+
+### Outfit 1: 90s Grunge Streetwear
+Lean into the boxy, worn-in feel of the tee by pairing it with darker denim and chunky footwear.
+* **Bottoms:** Baggy straight-leg jeans (dark wash)
+* **Shoes:** Black combat boots
+* **Accessories:** Black crossbody bag
+* **How to wear it:** Tuck the graphic tee in slightly to balance the boxy fit with the baggy jeans. Finish with the combat boots and crossbody bag for an effortless, everyday grunge look.
+
+### Outfit 2: Layered Contrast (Warm & Cool Tones)
+Use the tee as a base layer to play with proportions and mix your dark streetwear pieces with earth tones.
+* **Bottoms:** Wide-leg khaki trousers
+* **Outerwear:** Vintage black denim jacket
+* **Shoes:** Chunky white sneakers
+* **Accessories:** Brown leather belt
+* **How to wear it:** Wear the graphic tee untucked over the khaki trousers, cinched with the brown leather belt to break up the colors. Throw the vintage black denim jacket on top and anchor the outfit with the chunky white sneakers for a casual, high-low streetwear vibe.
+
+Fit card: Nothing beats the broken-in feel of a good 2003 Tour Bootleg Style graphic tee, especially layered under an oversized jacket with baggy denim. I’m listing this one on depop for $24.0 so it can find a good home. Grab it before someone else does!
+
+0 model calls this session, 2 served from cache
 ```
 
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
+$ python -c "from tools import search_listings; print([(item['id'], item['title'], item['price']) for item in search_listings('graphic tee', max_price=30)])"
+[('lst_002', 'Y2K Baby Tee — Butterfly Print', 18.0), ('lst_006', 'Graphic Tee — 2003 Tour Bootleg Style', 24.0), ('lst_017', 'Mesh Long-Sleeve Top — Black', 15.0), ('lst_033', 'Vintage Band Tee — Faded Grey', 19.0), ('lst_011', 'Low-Rise Cargo Pants — Khaki', 27.0), ('lst_015', 'Vintage Graphic Hoodie — Faded Black', 26.0)]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_example_wardrobe()))"
+Here are two ways to style your 2003 tour bootleg tee using items already in your closet:
 
+### Outfit 1: 90s Grunge Streetwear
+Lean into the boxy, worn-in feel of the tee by pairing it with darker denim and chunky footwear.
+* **Bottoms:** Baggy straight-leg jeans (dark wash)
+* **Shoes:** Black combat boots
+* **Accessories:** Black crossbody bag
+* **How to wear it:** Tuck the graphic tee in slightly to balance the boxy fit with the baggy jeans. Finish with the combat boots and crossbody bag for an effortless, everyday grunge look.
+
+### Outfit 2: Layered Contrast (Warm & Cool Tones)
+Use the tee as a base layer to play with proportions and mix your dark streetwear pieces with earth tones.
+* **Bottoms:** Wide-leg khaki trousers
+* **Outerwear:** Vintage black denim jacket
+* **Shoes:** Chunky white sneakers
+* **Accessories:** Brown leather belt
+* **How to wear it:** Wear the graphic tee untucked over the khaki trousers, cinched with the brown leather belt to break up the colors. Throw the vintage black denim jacket on top and anchor the outfit with the chunky white sneakers for a casual, high-low streetwear vibe.
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
-
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+Nothing beats the drape of a truly broken-in pair of Vintage Levi's 501 Jeans in a medium wash. I’ve been living in these with crisp white sneakers for that effortlessly cool, off-duty weekend look. Grab them on depop for $38.0 before I change my mind.
 ```
 
 ---
@@ -147,15 +196,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked AI to turn the listing fields and `search_listings` signature into a concrete tool contract, including size matching and no-match behavior.
+- *What came back:* It proposed matching whole size labels and slash-separated sizes, and returning an empty list when no listings match.
+- *What I changed:* I checked the actual size values, wrote the exact rule in Tool Inventory, and implemented it so `M` matches `S/M` but not `XL`.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked AI to wire `run_agent()` so every tool result goes through the session and empty search stops before outfit generation.
+- *What came back:* It found the tools were still stubs, then added keyword search, model-backed outfit and fit-card tools, and the early-return branch.
+- *What I changed:* I recorded the ID passed into `suggest_outfit` and compared it with `session["selected_item"]["id"]`; I also checked that an impossible query leaves `fit_card` as `None` and gives a useful message.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
