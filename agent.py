@@ -13,7 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
-import config
+import re
+
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
 from generate import ModelUnavailable
@@ -64,7 +65,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         the run ended early and the later fields will still be None.
 
     ─────────────────────────────────────────────────────────────────────────
-    TODO — build this, following the branch rule you wrote in Milestone 2.
+    Plan — implemented below, following the branch rule from Milestone 2.
 
       1. Start a session with new_session().
 
@@ -107,8 +108,64 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     """
     session = new_session(query, wardrobe)
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    # Pull an optional size and inclusive price ceiling out of the query.
+    # The remaining words become the search description.
+    remaining = query
+    parsed = {"description": "", "size": None, "max_price": None}
+
+    price_match = re.search(
+        r"\b(?:under|below|less than|up to)\s+\$?\s*(\d+(?:\.\d{1,2})?)\b",
+        remaining,
+        re.IGNORECASE,
+    )
+    if price_match:
+        parsed["max_price"] = float(price_match.group(1))
+        remaining = remaining[:price_match.start()] + " " + remaining[price_match.end():]
+
+    size_match = re.search(
+        r"\b(?:in\s+)?size\s+"
+        r"(US\s+\d+(?:\.\d+)?|W\d+(?:\s+L\d+)?|[A-Za-z0-9]+(?:\s*/\s*[A-Za-z0-9]+)?)\b",
+        remaining,
+        re.IGNORECASE,
+    )
+    if size_match:
+        parsed["size"] = re.sub(r"\s*/\s*", "/", size_match.group(1)).strip()
+        remaining = remaining[:size_match.start()] + " " + remaining[size_match.end():]
+
+    parsed["description"] = re.sub(r"\s+", " ", remaining).strip(" ,.;:!?-")
+    session["parsed"] = parsed
+
+    # This run has one pass through the plan. Keep the guard so the stop
+    # condition remains explicit if the loop gains another branch later.
+    trace.check_iterations(1)
+
+    session["search_results"] = search_listings(
+        session["parsed"]["description"],
+        size=session["parsed"]["size"],
+        max_price=session["parsed"]["max_price"],
+    )
+    if not session["search_results"]:
+        requested = session["parsed"]
+        changes = []
+        if requested["size"] is not None:
+            changes.append(f"size {requested['size']}")
+        if requested["max_price"] is not None:
+            changes.append(f"a higher price ceiling than ${requested['max_price']:g}")
+        changes.append("a different item description")
+        session["error"] = (
+            f"No listings matched '{requested['description']}'. Try "
+            + " or ".join(changes)
+            + "."
+        )
+        return session
+
+    session["selected_item"] = session["search_results"][0]
+    session["outfit_suggestion"] = suggest_outfit(
+        session["selected_item"], session["wardrobe"]
+    )
+    session["fit_card"] = create_fit_card(
+        session["outfit_suggestion"], session["selected_item"]
+    )
     return session
 
 
