@@ -25,9 +25,10 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+I chose 4 of 5 because search is based on keyword overlap, so a query can
+match the idea of an item without sharing enough of its description's words.
+The two model calls can also vary, so one imperfect run should not mean the
+whole path is unusable.
 
 ---
 
@@ -37,26 +38,21 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+I chose 5 of 5 because this is a direct, deterministic branch: an empty search
+result should always stop the loop before either model-backed tool is called.
+The agent can give the same useful next-step message on every such run.
 
 ---
 
 ## 3. Something about state
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+For a matching query, the `id` in `session["selected_item"]` is the same as
+the `new_item["id"]` received by `suggest_outfit` in 5 of 5 tries.
 
 **Why this target:**
+I chose 5 of 5 because passing the selected dict into the next tool is a
+deterministic state handoff. Comparing IDs makes it observable even if other
+fields are reformatted or omitted from a trace.
 
 
 
@@ -64,20 +60,14 @@ Given a query that matches no listings, the agent stops before calling
 
 ## 4. Something about the fit card
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+Across 5 fit cards generated for the same item and outfit, at least 4 of 5
+are 2–4 sentences and mention the item's title, price, and platform. Different
+wording between cards is acceptable.
 
 **Why this target:**
+I chose 4 of 5 because model wording can vary, but the caption still needs its
+key listing details and a postable length most of the time. I care more about
+those details being present than identical wording across calls.
 
 
 
@@ -85,16 +75,14 @@ Given a query that matches no listings, the agent stops before calling
 
 ## 5. Your choice
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+For 5 queries with a price ceiling and at least one matching listing, every
+listing returned by `search_listings` costs no more than that ceiling in 5 of
+5 tries.
 
 **Why this target:**
+I chose 5 of 5 because comparing a listing's numeric `price` with the user's
+maximum is deterministic, and a single over-budget result breaks the filter's
+promise.
 
 
 
