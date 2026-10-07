@@ -59,24 +59,24 @@
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Finds listings whose description matches the requested keywords, with optional size and maximum-price filters.
+- **Inputs:** `description` (str); `size` (str | None, optional); `max_price` (float | None, optional, inclusive).
+- **Returns:** Matching listing dicts, ordered best match first and limited by `config.SEARCH_RESULT_LIMIT`; each dict has `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price`, `colors`, `brand`, and `platform`.
+- **When it has nothing:** Returns an empty list (`[]`). A requested size matches a whole size label or a whole slash-separated size component, case-insensitively; for example, `M` matches `M`, `S/M`, and `M/L`, but not `XL` or `L/XL`.
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Suggests one or two outfits using a listing the user is considering and, when available, pieces from their wardrobe.
+- **Inputs:** `new_item` (dict with the listing fields above); `wardrobe` (dict with an `items` list of wardrobe-item dicts containing `id`, `name`, `category`, `colors`, `style_tags`, and optional `notes`).
+- **Returns:** A non-empty string with one or two outfit suggestions; when wardrobe items exist, the suggestions name pieces from that wardrobe.
+- **When it has nothing:** An empty wardrobe (`{"items": []}`) still returns general styling advice for `new_item`, rather than an empty string or an error.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Writes a short, post-ready caption about the find and its suggested outfit.
+- **Inputs:** `outfit` (str, the suggestion from `suggest_outfit`); `new_item` (dict with the listing fields above).
+- **Returns:** A two-to-four-sentence caption that mentions the item, its price, and its platform once each, and describes its vibe.
+- **When it has nothing:** If `outfit` is empty or whitespace, returns a descriptive fallback message instead of raising an error.
 
 ---
 
@@ -93,7 +93,7 @@
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put an informative message in `session["error"]` and stop. Otherwise, take the first result, save it as the selected item, and continue to `suggest_outfit`.
 
 **Where it lives:** `agent.py::run_agent`
 
