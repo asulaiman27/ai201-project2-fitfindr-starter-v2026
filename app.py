@@ -104,21 +104,36 @@ def cmd_examples(args):
     )
 
 
-def _ask_one(query, wardrobe, use_trace):
+def _ask_one(query, wardrobe, use_trace, remember_wardrobe=False):
     from agent import run_agent
     import trace as trace_module
 
     if use_trace:
         trace_module.start_trace()
 
-    session = run_agent(query, wardrobe)
+    session = run_agent(query, wardrobe, remember_wardrobe=remember_wardrobe)
 
     print()
+    if session.get("wardrobe_memory_used"):
+        print("  Using the wardrobe remembered from an earlier opted-in run.")
+    if session.get("wardrobe_memory_saved"):
+        print(f"  Saved {len(session['wardrobe'].get('items', []))} wardrobe pieces for future opted-in runs.")
     if session["error"]:
         print(f"  {session['error']}")
     else:
         item = session["selected_item"] or {}
         print(f"  Found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
+        comparison = session.get("price_comparison") or {}
+        if comparison.get("count"):
+            low = comparison["lowest"]
+            high = comparison["highest"]
+            print(
+                f"  Compare:  {comparison['count']} listings range from "
+                f"${low['price']:.2f} to ${high['price']:.2f}; "
+                f"average ${comparison['average']:.2f}."
+            )
+        if session.get("outfit_mode") == "general":
+            print("  Styling:  general ideas because no wardrobe items are saved.")
         print()
         print(f"  Outfit:   {session['outfit_suggestion']}")
         print()
@@ -145,7 +160,7 @@ def cmd_ask(args):
 
     try:
         if args.query:
-            _ask_one(args.query, wardrobe, args.trace)
+            _ask_one(args.query, wardrobe, args.trace, args.remember_wardrobe)
         else:
             print("Ask for something, or press Enter on an empty line to quit.\n")
             while True:
@@ -156,7 +171,7 @@ def cmd_ask(args):
                     break
                 if not query:
                     break
-                _ask_one(query, wardrobe, args.trace)
+                _ask_one(query, wardrobe, args.trace, args.remember_wardrobe)
     finally:
         print(generate.usage())
 
@@ -188,6 +203,11 @@ def build_parser():
         "--empty-wardrobe",
         action="store_true",
         help="run as a user with nothing saved — one of unit 4's failure modes",
+    )
+    p_ask.add_argument(
+        "--remember-wardrobe",
+        action="store_true",
+        help="save a non-empty wardrobe and reuse it on later opted-in runs",
     )
     p_ask.set_defaults(func=cmd_ask)
 

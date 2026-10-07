@@ -204,20 +204,48 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         title = new_item.get("title", "This thrifted find")
         return f"{title} is a distinctive secondhand find with its own character."
 
+    title = str(new_item.get("title", "Thrifted find"))
+    price = new_item.get("price", "unknown")
+    price_text = f"{price:g}" if isinstance(price, (int, float)) else str(price)
+    platform = str(new_item.get("platform", "resale platform"))
     prompt = (
-        "Write a natural, post-ready fit-card caption in 2–4 sentences. Mention the item's "
-        "title, price, and platform exactly once each, and make the vibe specific. Avoid "
-        "sounding like a product listing.\n\n"
-        f"Item title: {new_item.get('title', 'Thrifted find')}\n"
-        f"Price: ${new_item.get('price', 'unknown')}\n"
-        f"Platform: {new_item.get('platform', 'unknown')}\n"
-        f"Outfit suggestion: {outfit.strip()}"
+        "Write one lively, specific sentence about the outfit's vibe. Do not mention the "
+        "item title, price, or selling platform; those will be added separately. Avoid a "
+        "product-listing tone.\n\n"
+        f"Item: {title}\nOutfit suggestion: {outfit.strip()}"
     )
-    caption = generate(
+    vibe = generate(
         prompt,
         system="You write concise, authentic secondhand-fashion social captions.",
     ).strip()
-    return caption or (
-        f"Found {new_item.get('title', 'a thrifted piece')} for ${new_item.get('price', 'unknown')} "
-        f"on {new_item.get('platform', 'a resale platform')}. {outfit.strip()}"
-    )
+
+    # Keep the model's variable wording while guaranteeing the listing facts
+    # required for a useful caption appear once and in a predictable form.
+    for fact in (title, platform):
+        if fact:
+            vibe = re.sub(re.escape(fact), "", vibe, flags=re.IGNORECASE)
+    if price_text != "unknown":
+        vibe = re.sub(rf"\$\s*{re.escape(price_text)}\b", "", vibe)
+    sentences = [part.strip(" \t\n-*#") for part in re.split(r"(?<=[.!?])\s+", vibe) if part.strip()]
+    vibe_sentence = sentences[0] if sentences else "This look has an easy, lived-in streetwear vibe"
+    if vibe_sentence[-1:] not in ".!?":
+        vibe_sentence += "."
+    return f"{vibe_sentence} The {title} is listed for ${price_text} on {platform}."
+
+
+# ── Stretch tool: compare_prices ──────────────────────────────────────────────
+
+def compare_prices(listings: list[dict]) -> dict:
+    """Summarize the price range in a list of comparable search results."""
+    if not listings:
+        return {"count": 0, "lowest": None, "highest": None, "average": None}
+
+    lowest = min(listings, key=lambda item: item["price"])
+    highest = max(listings, key=lambda item: item["price"])
+    average = sum(item["price"] for item in listings) / len(listings)
+    return {
+        "count": len(listings),
+        "lowest": lowest,
+        "highest": highest,
+        "average": round(average, 2),
+    }

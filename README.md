@@ -41,9 +41,10 @@
 
 FitFindr takes a natural-language request for a secondhand clothing item and
 searches listings by description keywords, with optional size and price filters.
-When it finds a match, it chooses the top listing, suggests outfits using the
-user's wardrobe, and creates a short fit-card caption. If nothing matches, it
-stops and tells the user what they could change.
+For matches, it compares the result prices, chooses the top listing, suggests
+outfits using saved wardrobe pieces, and creates a short fit-card caption. If
+nothing matches, it stops with a helpful message; opted-in runs can also reuse a
+wardrobe saved from an earlier run.
 
 ---
 
@@ -110,9 +111,9 @@ stops and tells the user what they could change.
 
 **How the query is parsed:** Regular expressions extract an optional size and price ceiling; the remaining words become the search description.
 
-**What moves through the session:** `parsed` → `search_results` → `selected_item` → `outfit_suggestion` → `fit_card`. Each tool's result is stored in the session and read from there for the next step.
+**What moves through the session:** `parsed` → `search_results` → `price_comparison` → `selected_item` → `outfit_suggestion` → `fit_card`. Each tool's result is stored in the session and read from there for the next step.
 
-**Style memory (stretch, planned before implementation):** With `remember_wardrobe=True`, save a non-empty wardrobe in the ignored `.cache/` folder. On a later opted-in run with an empty wardrobe, load the saved wardrobe and use its pieces in outfit suggestions.
+**Style memory (stretch):** With `--remember-wardrobe`, the CLI saves a non-empty wardrobe in the ignored `.cache/` folder. On a later opted-in run with `--empty-wardrobe`, it loads the saved wardrobe and uses its pieces in outfit suggestions. Without the opt-in flag, an empty wardrobe stays empty.
 
 ---
 
@@ -128,6 +129,7 @@ stops and tells the user what they could change.
 ```
 $ python app.py ask 'vintage graphic tee under $30'
 Found:    Graphic Tee — 2003 Tour Bootleg Style — $24.0 on depop
+Compare:  8 listings range from $15.00 to $27.00; average $21.75.
 
 Outfit:   Here are two ways to style your 2003 tour bootleg tee using items already in your closet:
 
@@ -146,9 +148,17 @@ Use the tee as a base layer to play with proportions and mix your dark streetwea
 * **Accessories:** Brown leather belt
 * **How to wear it:** Wear the graphic tee untucked over the khaki trousers, cinched with the brown leather belt to break up the colors. Throw the vintage black denim jacket on top and anchor the outfit with the chunky white sneakers for a casual, high-low streetwear vibe.
 
-Fit card: Nothing beats the broken-in feel of a good 2003 Tour Bootleg Style graphic tee, especially layered under an oversized jacket with baggy denim. I’m listing this one on depop for $24.0 so it can find a good home. Grab it before someone else does!
+Fit card: Channel effortless 90s attitude by throwing this worn-in tour tee over baggy denim and chunky combat boots. The Graphic Tee — 2003 Tour Bootleg Style is listed for $24 on depop.
 
-0 model calls this session, 2 served from cache
+1 model calls this session, 1 served from cache
+```
+
+**Empty-search branch**
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5'
+No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.
+0 model calls this session
 ```
 
 **The three tools, tested one at a time**
@@ -180,7 +190,38 @@ Use the tee as a base layer to play with proportions and mix your dark streetwea
 
 ```
 $ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
-Nothing beats the drape of a truly broken-in pair of Vintage Levi's 501 Jeans in a medium wash. I’ve been living in these with crisp white sneakers for that effortlessly cool, off-duty weekend look. Grab them on depop for $38.0 before I change my mind.
+Effortless weekend energy, fueled by broken-in denim and crisp white kicks. The Vintage Levi's 501 Jeans — Medium Wash is listed for $38 on depop.
+```
+
+**Stretch tool: `compare_prices`**
+
+```
+$ python -c "from tools import compare_prices, search_listings; s = compare_prices(search_listings('graphic tee', max_price=30)); print({'count': s['count'], 'lowest': s['lowest']['price'], 'highest': s['highest']['price'], 'average': s['average']})"
+{'count': 6, 'lowest': 15.0, 'highest': 27.0, 'average': 21.5}
+```
+
+**Second branch: empty wardrobe**
+
+```
+$ python app.py ask 'denim jacket under $50' --empty-wardrobe
+(running with an empty wardrobe)
+Found:    Denim Jacket — Light Wash, Cropped — $42.0 on poshmark
+Compare:  5 listings range from $24.00 to $45.00; average $34.20.
+Styling:  general ideas because no wardrobe items are saved.
+Fit card: Layering this cropped vintage wash over baggy denim brings effortless 90s attitude to your daily rotation. The Denim Jacket — Light Wash, Cropped is listed for $42 on poshmark.
+```
+
+**Style memory: two opted-in runs**
+
+```
+$ python app.py ask 'vintage graphic tee under $30' --remember-wardrobe
+Saved 10 wardrobe pieces for future opted-in runs.
+
+$ python app.py ask 'denim jacket under $50' --empty-wardrobe --remember-wardrobe
+Using the wardrobe remembered from an earlier opted-in run.
+Outfit: Here are two ways to style your new cropped light-wash denim jacket using only pieces from your wardrobe:
+* White ribbed tank top, baggy straight-leg jeans, chunky white sneakers, and black crossbody bag.
+* Black cropped zip hoodie, wide-leg khaki trousers, black combat boots, and brown leather belt.
 ```
 
 ---

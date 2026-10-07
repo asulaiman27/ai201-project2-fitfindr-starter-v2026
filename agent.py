@@ -13,10 +13,12 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import json
 import re
 
+import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import compare_prices, search_listings, suggest_outfit, create_fit_card
 from generate import ModelUnavailable
 
 
@@ -40,8 +42,12 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "query": query,              # what the user typed
         "parsed": {},                # description / size / max_price you pulled out of it
         "search_results": [],        # everything search_listings returned
+        "price_comparison": None,    # range across the current search results
         "selected_item": None,       # the one you chose — goes into suggest_outfit
         "wardrobe": wardrobe,        # the user's wardrobe
+        "wardrobe_memory_used": False,
+        "wardrobe_memory_saved": False,
+        "outfit_mode": None,
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
         "error": None,               # set when the run ended early
@@ -50,7 +56,24 @@ def new_session(query: str, wardrobe: dict) -> dict:
 
 # ── planning loop ─────────────────────────────────────────────────────────────
 
-def run_agent(query: str, wardrobe: dict) -> dict:
+def _remembered_wardrobe() -> dict | None:
+    path = config.CACHE_DIR / "remembered_wardrobe.json"
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(saved, dict) and isinstance(saved.get("items"), list) and saved["items"]:
+        return {"items": saved["items"]}
+    return None
+
+
+def _save_wardrobe(wardrobe: dict) -> None:
+    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.CACHE_DIR / "remembered_wardrobe.json"
+    path.write_text(json.dumps({"items": wardrobe["items"]}, indent=2), encoding="utf-8")
+
+
+def run_agent(query: str, wardrobe: dict, *, remember_wardrobe: bool = False) -> dict:
     """
     Run the loop once and return the finished session.
 
@@ -59,6 +82,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                   (e.g. "vintage graphic tee under $30, size M").
         wardrobe: a wardrobe dict — get_example_wardrobe() or
                   get_empty_wardrobe() from utils/data_loader.py.
+        remember_wardrobe: when True, save a non-empty wardrobe for later
+                           opted-in runs; an empty input then reuses it.
 
     Returns:
         The session dict. **Check session["error"] first** — if it isn't None,
@@ -106,7 +131,23 @@ def run_agent(query: str, wardrobe: dict) -> dict:
       • A handler for ModelUnavailable, so a bad key produces a message rather
         than a stack trace. The import is already at the top of this file.
     """
+    wardrobe = wardrobe if isinstance(wardrobe, dict) else {"items": []}
+    wardrobe_items = wardrobe.get("items", [])
+    memory_used = False
+    memory_saved = False
+    if remember_wardrobe:
+        if wardrobe_items:
+            _save_wardrobe(wardrobe)
+            memory_saved = True
+        else:
+            remembered = _remembered_wardrobe()
+            if remembered is not None:
+                wardrobe = remembered
+                memory_used = True
+
     session = new_session(query, wardrobe)
+    session["wardrobe_memory_used"] = memory_used
+    session["wardrobe_memory_saved"] = memory_saved
 
     # Pull an optional size and inclusive price ceiling out of the query.
     # The remaining words become the search description.
@@ -159,10 +200,18 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         )
         return session
 
+    session["price_comparison"] = compare_prices(session["search_results"])
     session["selected_item"] = session["search_results"][0]
-    session["outfit_suggestion"] = suggest_outfit(
-        session["selected_item"], session["wardrobe"]
-    )
+    if session["wardrobe"].get("items"):
+        session["outfit_mode"] = "wardrobe"
+        session["outfit_suggestion"] = suggest_outfit(
+            session["selected_item"], session["wardrobe"]
+        )
+    else:
+        session["outfit_mode"] = "general"
+        session["outfit_suggestion"] = suggest_outfit(
+            session["selected_item"], {"items": []}
+        )
     session["fit_card"] = create_fit_card(
         session["outfit_suggestion"], session["selected_item"]
     )
