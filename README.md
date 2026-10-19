@@ -109,6 +109,17 @@ wardrobe saved from an earlier run.
 
 **MCP transport:** `run_agent()` asks `mcp_client.call_tool("search_listings", ...)` to run the registered tool in `mcp_server.py`. The client unwraps the response to the same list of listing dictionaries returned by `tools.search_listings()`.
 
+**Unit 4 stretch plans (declared before implementation):**
+
+- Move the existing `compare_prices` summary tool onto MCP as a second
+  registered tool, and show its call in the loop trace.
+- If a search with a requested size is empty, retry once with the same
+  description and price ceiling but no size filter. Label the retry and the
+  dropped size in the trace. I checked `graphic tee` at size `XS`: the strict
+  search returned `[]`, while the same search without size returned six items.
+- Measure this retry as the second improvement, with a third five-criterion,
+  five-try run log and an honest before/after comparison.
+
 **Second branch (stretch):** If the wardrobe has items, request combinations using those owned pieces. If it is empty, request general styling advice and mark the session mode as `general`.
 
 **How the query is parsed:** Regular expressions extract an optional size and price ceiling; the remaining words become the search description.
