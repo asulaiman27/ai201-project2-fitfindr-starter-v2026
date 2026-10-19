@@ -209,8 +209,10 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     price_text = f"{price:g}" if isinstance(price, (int, float)) else str(price)
     platform = str(new_item.get("platform", "resale platform"))
     prompt = (
-        "Write one lively, specific sentence about the outfit's vibe. Do not mention the "
-        "item title, price, or selling platform; those will be added separately. Avoid a "
+        "Write one lively, specific sentence about the outfit's vibe. Give it a fresh, "
+        "distinctive opening; avoid stock lead-ins and vary the sentence structure instead "
+        "of defaulting to phrases like 'Channeling' or 'This look'. Do not mention the item "
+        "title, price, or selling platform; those will be added separately. Avoid a "
         "product-listing tone.\n\n"
         f"Item: {title}\nOutfit suggestion: {outfit.strip()}"
     )

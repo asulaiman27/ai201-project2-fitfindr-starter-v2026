@@ -465,19 +465,92 @@ full. -->
 
 **What I changed:**
 
+In `tools.py::create_fit_card`, I changed the prompt to ask for a fresh,
+distinctive opening, avoid stock lead-ins such as “Channeling” and “This look,”
+and vary sentence structure. The before log's same-item captions repeatedly
+opened with “Channeling,” even though they met the original length and detail
+criterion.
+
 **Which failure it was meant to fix:**
+
+The repetitive opening pattern in the fit-card model output. My earlier
+diagnosis suggested checking whether repeated cards could have distinct
+openings, so I changed only the fit-card prompt to target that pattern.
 
 ### Run Log — After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4 of 5 | FAIL | FAIL | FAIL | FAIL | FAIL | MISSED (0/5) |
+| 2. Impossible query stops before tool 2 | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item ID reaches `suggest_outfit` unchanged | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Same-item fit card meets length and detail requirements | 4 of 5 | FAIL | FAIL | FAIL | FAIL | FAIL | MISSED (0/5) |
+| 5. Five capped queries return only listings at or below their ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+The complete uncached evaluation (all 25 tries) is in
+[`results/run_2026-10-19_0020_after.md`](results/run_2026-10-19_0020_after.md).
+The API connection check is also recorded below; the full test output is from
+`test.py::main`.
+
+**Real output from one try per criterion** (`run_eval.py::run_once`):
+
+**Criterion 1 — matching query**
+
+```text
+[1] search_listings (via MCP) — 8 items, including Graphic Tee — 2003 Tour Bootleg Style
+[2] compare_prices — dict with keys: count, lowest, highest, average
+[3] suggest_outfit — unavailable; stopping
+Message: I couldn't reach the model for outfit advice. Check your API key or connection and try again.
+```
+
+**Criterion 2 — impossible query**
+
+```text
+[1] search_listings (via MCP)
+      out: [] (empty)
+      → empty result; stopping
+No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.
+```
+
+**Criterion 3 — selected item reaches `suggest_outfit`**
+
+```text
+selected_item: Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+[3] suggest_outfit
+      in: {'item_id': 'lst_006', 'wardrobe_item_count': 10}
+      out: unavailable
+```
+
+**Criterion 4 — fit card**
+
+```text
+[3] suggest_outfit
+      out: Baggy dark denim, black combat boots, and a brown leather belt.
+[4] create_fit_card
+      in: {'item_id': 'lst_006'}
+      out: unavailable
+      → model unavailable; stopping
+```
+
+**Criterion 5 — capped searches**
+
+```text
+vintage graphic tee under $30: lst_006=$24.0, lst_002=$18.0, lst_015=$26.0, lst_017=$15.0, lst_033=$19.0, lst_011=$27.0, lst_012=$20.0, lst_030=$25.0
+90s track jacket under $50: lst_004=$45.0, lst_007=$42.0, lst_010=$40.0, lst_013=$30.0, lst_019=$48.0, lst_031=$36.0, lst_032=$33.0
+leather belt under $20: lst_014=$12.0
+denim jacket under $45: lst_007=$42.0, lst_004=$45.0, lst_016=$24.0, lst_032=$33.0, lst_038=$27.0
+silk button-down under $30: lst_029=$28.0, lst_014=$12.0, lst_020=$16.0
+```
 
 **Did it help, and how do I know:**
+
+I cannot tell whether the prompt change helped because the after-run made no
+model-backed outfit or fit-card outputs. The agent stopped at `suggest_outfit`
+in every matching run. `python test.py` confirmed the API key is loaded, but
+its model-call check failed with `ConnectError: [Errno 8] nodename nor
+servname provided, or not known`. That means criteria 1 and 4 missed in this
+run; it does not show that the prompt itself worsened the output. The empty
+search, session handoff, and price-ceiling checks still passed 5/5.
 
 <!-- If it made things worse, say that. Honestly reported, that earns full
      credit and is more interesting than one that worked. -->
@@ -487,6 +560,11 @@ full. -->
 ---
 
 ## What's Still Broken
+
+The model endpoint could not be resolved during the after-run (`ConnectError`
+from `test.py::main`), so the prompt change still needs a live evaluation. Once
+the model connection works again, rerun `python run_eval.py --label after` and
+compare the five same-item openings with the before log.
 
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
