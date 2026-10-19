@@ -358,14 +358,15 @@ silk button-down under $30: lst_029=$28.0, lst_014=$12.0, lst_020=$16.0
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | Matching query completes all three tools | 4 of 5 | MET (5/5) | All five traces show `search_listings`, `suggest_outfit`, and `create_fit_card`, with a non-empty fit card. |
+| 2 | Impossible query stops before tool 2 | 5 of 5 | MET (5/5) | Every impossible-query run returned an actionable message and stopped after search, before `suggest_outfit`. |
+| 3 | Selected item ID reaches `suggest_outfit` unchanged | 5 of 5 | MET (5/5) | In all five matching runs, `session["selected_item"]["id"]` and the `suggest_outfit` input were `lst_006`. |
+| 4 | Same-item, same-outfit fit card meets length and detail requirements | 4 of 5 | MET (5/5) | With the item and outfit fixed, all five cards had two sentences and named the title, `$24`, and `depop`. |
+| 5 | Five capped queries return only listings at or below their ceiling | 5 of 5 | MET (5/5) | Each of five distinct capped queries returned at least one listing, and every listed price was at or below its cap. |
 
 **Diagnoses**
 
+No criteria were missed, so there is no failing tool, branch, session handoff, or model output to diagnose. Criteria 1 and 4 were conservative for this sample: each allowed one miss and both passed 5/5. Five tries are too few to say those targets are generally too low, especially because both criteria include model calls. If I tightened one next, I would tighten criterion 4 to require all five captions to have distinct opening sentences while still naming the listing details. I am not revising the current criterion because it was measurable and met.
 
 
 ---
