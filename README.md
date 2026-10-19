@@ -269,17 +269,71 @@ Outfit: Here are two ways to style your new cropped light-wash denim jacket usin
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before tool 2 | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item ID reaches `suggest_outfit` unchanged | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Same-item, same-outfit fit card has 2–4 sentences and names title, price, platform | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Five capped queries return only listings at or below their ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+**Real output from one try per criterion**. The complete uncached run and all
+25 attempt records are in `results/run_2026-10-18_2231_before.md` (35 live
+model calls; cache off).
 
+**Criterion 1 — `agent.py::run_agent`, recorded by `run_eval.py::run_once`**
+
+```text
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 8 items: Graphic Tee — 2003 Tour Bootleg Style, Y2K Baby Tee — Butterfly Print, Vintage Graphic Hoodie — Faded Black … +5 more
+[2] compare_prices
+      in:  {'listing_count': 8}
+      out: dict with keys: count, lowest, highest, average…
+[3] suggest_outfit
+      in:  {'item_id': 'lst_006', 'wardrobe_item_count': 10}
+      out: Here are two wearable ways to style your 2003 tour bootleg tee using only what's in your closet:  **Outfit 1: …
+[4] create_fit_card
+      in:  {'item_id': 'lst_006'}
+      out: Channeling effortless festival energy, this faded tee looks instantly cool tucked into crisp trousers or doubl…
+Fit card: Channeling effortless festival energy, this faded tee looks instantly cool tucked into crisp trousers or doubled up on denim. The Graphic Tee — 2003 Tour Bootleg Style is listed for $24 on depop.
 ```
 
+**Criterion 2 — `agent.py::run_agent`**
+
+```text
+[1] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    empty result; stopping
+No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.
+```
+
+**Criterion 3 — session state and `suggest_outfit` input, `agent.py::run_agent`**
+
+```text
+session["selected_item"]["id"]: lst_006
+[3] suggest_outfit
+      in:  {'item_id': 'lst_006', 'wardrobe_item_count': 10}
+```
+
+**Criterion 4 — `tools.py::create_fit_card`**
+
+```text
+[3] suggest_outfit
+      out: Baggy dark denim, black combat boots, and a brown leather belt.
+[4] create_fit_card
+      in:  {'item_id': 'lst_006'}
+      out: Channeling effortless backstage energy with distressed denim and heavy boots, this worn-in tour tee looks like…
+Channeling effortless backstage energy with distressed denim and heavy boots, this worn-in tour tee looks like you caught the best show of 2003 from the front row. The Graphic Tee — 2003 Tour Bootleg Style is listed for $24 on depop.
+```
+
+**Criterion 5 — `tools.py::search_listings`, called through MCP**
+
+```text
+vintage graphic tee under $30: lst_006=$24.0, lst_002=$18.0, lst_015=$26.0, lst_017=$15.0, lst_033=$19.0, lst_011=$27.0, lst_012=$20.0, lst_030=$25.0
+90s track jacket under $50: lst_004=$45.0, lst_007=$42.0, lst_010=$40.0, lst_013=$30.0, lst_019=$48.0, lst_031=$36.0, lst_032=$33.0
+leather belt under $20: lst_014=$12.0
+denim jacket under $45: lst_007=$42.0, lst_004=$45.0, lst_016=$24.0, lst_032=$33.0, lst_038=$27.0
+silk button-down under $30: lst_029=$28.0, lst_014=$12.0, lst_020=$16.0
 ```
 
 ---

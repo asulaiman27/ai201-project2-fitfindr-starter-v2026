@@ -6,11 +6,10 @@ the empty-search branch needs an impossible query. One about the fit card needs
 the same item run more than once. Working that out is Milestone 3's first step,
 and this file is where you write it down.
 
-`run_eval.py` runs everything here five times and writes the run log — five
-because your criteria are written out of five.
-
-Three scenarios are filled in to show the shape. Add or change whatever your
-own criteria need — these are a starting point, not a fixed set.
+`run_eval.py` runs each scenario five times and writes the run log — five
+because your criteria are written out of five. Criterion 5 supplies a `queries`
+list so each try checks a different price ceiling. Criterion 4 supplies a
+`fixed_outfit` so all five fit-card calls receive the same item and outfit.
 """
 
 SCENARIOS = [
@@ -29,24 +28,33 @@ SCENARIOS = [
         "criterion": 2,
     },
     {
-        # A user with nothing saved. One of unit 4's three failure modes.
-        "name": "empty wardrobe",
-        "query": "denim jacket under $50",
-        "wardrobe": "empty",
-        "criterion": None,
+        # Check the session state against the item received by tool 2.
+        "name": "selected item reaches outfit tool",
+        "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": 3,
     },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
+    {
+        # Five uncached cards for the same selected item and outfit.
+        "name": "fit card details for the same item",
+        "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "fixed_outfit": "Baggy dark denim, black combat boots, and a brown leather belt.",
+        "criterion": 4,
+    },
+    {
+        # A distinct matching, price-capped query on each of five tries.
+        "name": "price ceilings filter five queries",
+        "queries": [
+            "vintage graphic tee under $30",
+            "90s track jacket under $50",
+            "leather belt under $20",
+            "denim jacket under $45",
+            "silk button-down under $30",
+        ],
+        "wardrobe": "example",
+        "criterion": 5,
+    },
 ]
 
 WARDROBES = ("example", "empty")
@@ -56,7 +64,10 @@ def validate() -> list[str]:
     """Complain about anything malformed, before a long run rather than during."""
     problems = []
     for i, scenario in enumerate(SCENARIOS, 1):
-        if not scenario.get("query", "").strip():
+        queries = scenario.get("queries", [scenario.get("query", "")])
+        if not isinstance(queries, list) or not queries or any(
+            not isinstance(query, str) or not query.strip() for query in queries
+        ):
             problems.append(f"scenario {i} has no query")
         if scenario.get("wardrobe") not in WARDROBES:
             problems.append(

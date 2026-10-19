@@ -7,9 +7,10 @@ Run your scenarios repeatedly and write the results down. ← UNIT 4
     python run_eval.py --tries 10          more tries
 
 This does the mechanical half of unit 4 for you. It runs every scenario in
-`scenarios.py` five separate times, **with caching off** so you get five real
-answers, captures the trace and the session for each, and writes it all into
-`results/` in the table format the submission asks for.
+`scenarios.py` five separate times, **with caching off** so model-backed tools
+get fresh answers, captures the trace and session for each, and writes the
+results into `results/`. A scenario may use a different `queries` entry per
+try, or a `fixed_outfit` to hold the outfit constant while testing fit cards.
 
 Five, because your criteria are written out of five — "4 of 5 tries", "5 of 5
 tries". One column per try means you count the passes and read the verdict
@@ -37,8 +38,9 @@ import config
 import scenarios as scenario_module
 
 
-def run_once(scenario, use_trace=True):
+def run_once(scenario, use_trace=True, query=None):
     """One scenario, one try. Returns everything worth recording."""
+    import agent as agent_module
     from agent import run_agent
     from utils.data_loader import get_example_wardrobe, get_empty_wardrobe
     import trace as trace_module
@@ -46,16 +48,23 @@ def run_once(scenario, use_trace=True):
     wardrobe = (
         get_empty_wardrobe() if scenario["wardrobe"] == "empty" else get_example_wardrobe()
     )
+    query = query or scenario.get("query") or scenario["queries"][0]
 
     if use_trace:
         trace_module.start_trace()
 
-    record = {"error": None, "session": None, "trace": "", "crashed": None}
+    record = {"error": None, "session": None, "trace": "", "crashed": None, "query": query}
+    original_suggest_outfit = agent_module.suggest_outfit
+    if scenario.get("fixed_outfit") is not None:
+        fixed_outfit = scenario["fixed_outfit"]
+        agent_module.suggest_outfit = lambda _item, _wardrobe: fixed_outfit
     try:
-        record["session"] = run_agent(scenario["query"], wardrobe)
+        record["session"] = run_agent(query, wardrobe)
     except Exception as exc:  # noqa: BLE001 — a crash is a result worth logging
         record["crashed"] = f"{type(exc).__name__}: {exc}"
         record["traceback"] = traceback.format_exc()
+    finally:
+        agent_module.suggest_outfit = original_suggest_outfit
 
     if use_trace:
         record["trace"] = trace_module.get_trace()
@@ -91,11 +100,18 @@ def main():
     rows = []
     for scenario in scenario_module.SCENARIOS:
         print(f"{scenario['name']}  ({scenario['wardrobe']} wardrobe)")
-        print(f"  query: {scenario['query']}")
+        queries = scenario.get("queries")
+        if queries:
+            print("  queries (one per try):")
+            for query in queries:
+                print(f"    - {query}")
+        else:
+            print(f"  query: {scenario['query']}")
 
         tries = []
         for attempt in range(1, args.tries + 1):
-            record = run_once(scenario)
+            query = queries[(attempt - 1) % len(queries)] if queries else scenario["query"]
+            record = run_once(scenario, query=query)
             tries.append(record)
 
             if record["crashed"]:
@@ -172,13 +188,20 @@ def write_report(rows, args):
 
     for row in rows:
         scenario = row["scenario"]
-        lines += [f"### {scenario['name']}", "",
-                  f"- Query: `{scenario['query']}`",
-                  f"- Wardrobe: {scenario['wardrobe']}", ""]
+        lines += [f"### {scenario['name']}", ""]
+        if scenario.get("queries"):
+            lines.append("- Queries across the tries:")
+            lines += [f"  - `{query}`" for query in scenario["queries"]]
+        else:
+            lines.append(f"- Query: `{scenario['query']}`")
+        if scenario.get("fixed_outfit") is not None:
+            lines.append(f"- Fixed outfit for all five tries: `{scenario['fixed_outfit']}`")
+        lines += [f"- Wardrobe: {scenario['wardrobe']}", ""]
 
         for i, record in enumerate(row["tries"], 1):
             lines.append(f"**Try {i}**")
             lines.append("")
+            lines.append(f"- Query: `{record['query']}`")
 
             if record["crashed"]:
                 lines += ["Crashed:", "", "```", record["crashed"], "```", ""]
@@ -186,11 +209,17 @@ def write_report(rows, args):
 
             session = record["session"] or {}
             item = session.get("selected_item") or {}
+            search_results = session.get("search_results") or []
+            prices = ", ".join(
+                f"{result.get('id', '?')}=${result.get('price', '?')}"
+                for result in search_results
+            ) or "(none)"
             lines += [
                 f"- stopped early: {'yes — ' + str(session.get('error')) if session.get('error') else 'no'}",
                 f"- selected_item: {item.get('title', '(none)')}"
                 + (f" (${item.get('price')}, {item.get('platform')})" if item else ""),
                 f"- search_results: {len(session.get('search_results') or [])}",
+                f"- returned listing prices: {prices}",
                 "",
             ]
             if session.get("outfit_suggestion"):
