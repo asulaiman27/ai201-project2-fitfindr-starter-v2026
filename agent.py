@@ -18,7 +18,7 @@ import re
 
 import config
 import trace
-from tools import compare_prices, suggest_outfit, create_fit_card
+from tools import suggest_outfit, create_fit_card
 from mcp_client import call_tool, MCPError
 from generate import ModelUnavailable
 
@@ -43,6 +43,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "query": query,              # what the user typed
         "parsed": {},                # description / size / max_price you pulled out of it
         "search_results": [],        # everything search_listings returned
+        "search_retries": 0,         # size-less search retries
         "price_comparison": None,    # range across the current search results
         "selected_item": None,       # the one you chose — goes into suggest_outfit
         "wardrobe": wardrobe,        # the user's wardrobe
@@ -198,30 +199,70 @@ def run_agent(query: str, wardrobe: dict, *, remember_wardrobe: bool = False) ->
         )
         return session
 
+    should_retry_without_size = (
+        not session["search_results"] and session["parsed"]["size"] is not None
+    )
     trace.step(
         "search_listings (via MCP)", inputs=search_inputs,
         returned=session["search_results"],
-        note="empty result; stopping" if not session["search_results"] else "",
+        note=("empty; retrying once without size" if should_retry_without_size
+              else "empty result; stopping" if not session["search_results"] else ""),
     )
+
+    if should_retry_without_size:
+        retry_inputs = {**search_inputs, "size": None}
+        session["search_retries"] = 1
+        try:
+            session["search_results"] = call_tool("search_listings", retry_inputs)
+        except MCPError:
+            session["error"] = (
+                "I couldn't reach the listings service for the size-free retry. "
+                "Please try again in a moment."
+            )
+            trace.step(
+                "search_listings (retry via MCP)", inputs=retry_inputs,
+                returned="unavailable", note="size filter dropped; service error; stopping",
+            )
+            return session
+        trace.step(
+            "search_listings (retry via MCP)", inputs=retry_inputs,
+            returned=session["search_results"],
+            note="dropped size filter after empty first search",
+        )
+
     if not session["search_results"]:
         requested = session["parsed"]
         changes = []
-        if requested["size"] is not None:
+        if requested["size"] is not None and not session["search_retries"]:
             changes.append(f"size {requested['size']}")
         if requested["max_price"] is not None:
             changes.append(f"a higher price ceiling than ${requested['max_price']:g}")
         changes.append("a different item description")
+        prefix = f"No listings matched '{requested['description']}'"
+        if session["search_retries"]:
+            prefix += f" even after dropping size {requested['size']}"
         session["error"] = (
-            f"No listings matched '{requested['description']}'. Try "
+            prefix + ". Try "
             + " or ".join(changes)
             + "."
         )
         return session
 
-    session["price_comparison"] = compare_prices(session["search_results"])
+    comparison_inputs = {"listings": session["search_results"]}
+    try:
+        session["price_comparison"] = call_tool("compare_prices", comparison_inputs)
+    except MCPError:
+        session["error"] = (
+            "I couldn't compare listing prices right now. Please try again in a moment."
+        )
+        trace.step(
+            "compare_prices (via MCP)", inputs=comparison_inputs,
+            returned="unavailable", note="service error; stopping",
+        )
+        return session
     trace.step(
-        "compare_prices",
-        inputs={"listing_count": len(session["search_results"])},
+        "compare_prices (via MCP)",
+        inputs=comparison_inputs,
         returned=session["price_comparison"],
     )
     session["selected_item"] = session["search_results"][0]

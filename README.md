@@ -103,11 +103,11 @@ wardrobe saved from an earlier run.
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:** If `search_listings` returns an empty list, put an informative message in `session["error"]` and stop. Otherwise, take the first result, save it as the selected item, and continue to `suggest_outfit`.
+**Branch rule:** If `search_listings` returns an empty list and the query included a size, retry once with the same description and price ceiling but `size=None`. If that retry is also empty, put an informative message in `session["error"]` and stop. If the first search or retry returns listings, save its first result as the selected item and continue to `suggest_outfit`.
 
 **Where it lives:** `agent.py::run_agent`
 
-**MCP transport:** `run_agent()` asks `mcp_client.call_tool("search_listings", ...)` to run the registered tool in `mcp_server.py`. The client unwraps the response to the same list of listing dictionaries returned by `tools.search_listings()`.
+**MCP transport:** `run_agent()` calls both `search_listings` and `compare_prices` through `mcp_client.call_tool(...)`; both are registered in `mcp_server.py`. The client unwraps each response to the same native list or summary dict returned by the direct tool function.
 
 **Unit 4 stretch plans (declared before implementation):**
 
@@ -266,6 +266,12 @@ Outfit: Here are two ways to style your new cropped light-wash denim jacket usin
 - *What came back:* It pointed out that the same-item captions repeatedly began with “Channeling,” and suggested asking for a fresh, distinctive opening and avoiding stock lead-ins.
 - *What I changed:* I updated only the prompt in `tools.py::create_fit_card`, then ran all 25 after-evaluation tries. The model connection failed with a DNS `ConnectError`, so I recorded the results as inconclusive for the prompt change instead of claiming it helped.
 
+**Moment 4 — stretch work**
+
+- *What I asked for:* I asked Codex to expose a second existing tool over MCP and add one retry when a size-filtered search returns nothing.
+- *What came back:* It suggested keeping the description and price ceiling fixed while setting only `size` to `None`, and routing `compare_prices` through the same MCP client.
+- *What I changed:* I implemented both MCP registrations/calls and the one-retry branch. A live trace showed the XS search return nothing, the size-free retry return six listings, and `compare_prices` run over MCP. I kept the retry limited to one attempt.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -385,6 +391,13 @@ silk button-down under $30: lst_029=$28.0, lst_014=$12.0, lst_020=$16.0
 
 No criteria were missed, so there is no failing tool, branch, session handoff, or model output to diagnose. Criteria 1 and 4 were conservative for this sample: each allowed one miss and both passed 5/5. Five tries are too few to say those targets are generally too low, especially because both criteria include model calls. If I tightened one next, I would tighten criterion 4 to require all five captions to have distinct opening sentences while still naming the listing details. I am not revising the current criterion because it was measurable and met.
 
+**Exploratory diagnosis behind the retry improvement:** A separate
+`search_listings` check for `graphic tee`, size `XS`, and a $30 ceiling returned
+no listings; removing only the size returned six. The mechanism was the tool's
+strict size filter, followed by `run_agent` stopping on any empty result. This
+wasn't a miss on criterion 2's impossible-query scenario, but it identified a
+recoverable empty-search case and motivated the retry improvement below.
+
 
 ---
 
@@ -400,7 +413,7 @@ No criteria were missed, so there is no failing tool, branch, session handoff, o
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
-**Happy path**
+**Earlier full model path (before `compare_prices` moved onto MCP)**
 
 ```
 [1] search_listings (via MCP)
@@ -417,7 +430,7 @@ No criteria were missed, so there is no failing tool, branch, session handoff, o
       out: Channel effortless 90s attitude by throwing this worn-in tour tee over baggy denim and chunky combat boots. Th…
 ```
 
-**Empty search**
+**Original empty-search trace (before the size-retry improvement)**
 
 ```
 [1] search_listings (via MCP)
@@ -428,6 +441,54 @@ No criteria were missed, so there is no failing tool, branch, session handoff, o
 No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.
 ```
 
+**Second MCP tool and size-retry trace** (`app.py::ask`, live run):
+
+```text
+[1] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': 'XS', 'max_price': 30.0}
+      out: [] (empty)
+      →    empty; retrying once without size
+[2] search_listings (retry via MCP)
+      in:  {'description': 'graphic tee', 'size': None, 'max_price': 30.0}
+      out: 6 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Mesh Long-Sleeve Top — Black … +3 more
+      →    dropped size filter after empty first search
+[3] compare_prices (via MCP)
+      in:  dict with keys: listings…
+      out: dict with keys: count, lowest, highest, average…
+[4] suggest_outfit
+      in:  {'item_id': 'lst_002'}
+      out: unavailable
+      →    model unavailable; stopping
+
+I couldn't reach the model for outfit advice. Check your API key or connection and try again.
+```
+
+**Completed-path integration trace:** The same five steps completed with test
+stand-ins for the model-backed `suggest_outfit` and `create_fit_card`; both MCP
+calls above were live. The stand-ins were used only to verify the full control
+flow while the model endpoint could not resolve.
+
+```text
+[1] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': 'XS', 'max_price': 30.0}
+      out: [] (empty)
+      →    empty; retrying once without size
+[2] search_listings (retry via MCP)
+      in:  {'description': 'graphic tee', 'size': None, 'max_price': 30.0}
+      out: 6 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Mesh Long-Sleeve Top — Black … +3 more
+      →    dropped size filter after empty first search
+[3] compare_prices (via MCP)
+      in:  dict with keys: listings…
+      out: dict with keys: count, lowest, highest, average…
+[4] suggest_outfit
+      in:  {'item_id': 'lst_002', 'wardrobe_item_count': 10}
+      out: Test outfit with dark denim and boots.
+[5] create_fit_card
+      in:  {'item_id': 'lst_002'}
+      out: Test fit card for Y2K Baby Tee — Butterfly Print at $18.0.
+session: search_retries=1, selected_item=lst_002, price_comparison.count=6, error=None
+```
+
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
@@ -435,11 +496,11 @@ full. -->
 
 
 
-**What changed:** I replaced the direct `search_listings(...)` call in `agent.py::run_agent` with `mcp_client.call_tool("search_listings", ...)`; the tool is registered with its description and typed inputs in `mcp_server.py`. `python mcp_client.py` listed it, and the direct and MCP calls returned the same list of listing dictionaries. After the rewire, the end-to-end query still completed and its trace showed the MCP call; I saw no change in the result shape or agent behavior.
+**What changed:** I replaced the direct `search_listings(...)` call in `agent.py::run_agent` with `mcp_client.call_tool("search_listings", ...)`; `search_listings` and `compare_prices` are now registered with descriptions and typed inputs in `mcp_server.py`. `python mcp_client.py` listed both, and MCP `compare_prices` returned the same count, lowest and highest listings, and average as the direct function. The live query shows the second MCP call in the trace. The price-summary shape did not change; the size retry is the separately described search behavior change.
 
 **Three failure checks**
 
-- **Empty search:** `python app.py ask 'designer ballgown size XXS under $5' --trace` returned: “No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.” The trace stops after the empty MCP result.
+- **Empty search:** `python app.py ask 'designer ballgown size XXS under $5' --trace` returned: “No listings matched 'designer ballgown' even after dropping size XXS. Try a higher price ceiling than $5 or a different item description.” The trace shows the initial empty MCP search and one retry with `size=None`, then stops before `suggest_outfit`.
 - **Empty wardrobe:** `python app.py ask 'denim jacket under $50' --empty-wardrobe --trace` completed without a crash or blank suggestion. It printed “Styling: general ideas because no wardrobe items are saved.” and returned general outfit advice.
 
   ```text
@@ -456,17 +517,22 @@ full. -->
   *Stylist Tip:* Because it’s a blank canvas, let the jacket's structure do the work—pop the collar slightly and push up the sleeves for an effortless, lived-in feel.
   ```
 
-- **Model unavailable:** I temporarily changed one character in `.env`, ran the uncached query `denim jacket under $50`, then restored `.env` byte-for-byte. The agent printed “I couldn't reach the model for outfit advice. Check your API key or connection and try again.” The trace marked `suggest_outfit` unavailable and stopped; there was no raw stack trace.
+- **Model unavailable:** The live query `graphic tee size XS under $30` reached `suggest_outfit` after retrying search and comparing prices, then reported “I couldn't reach the model for outfit advice. Check your API key or connection and try again.” It stopped without a raw stack trace.
 
 ```text
 [1] search_listings (via MCP)
-      in:  {'description': 'denim jacket', 'size': None, 'max_price': 50.0}
-      out: 5 items: Denim Jacket — Light Wash, Cropped, 90s Track Jacket — Navy/White Stripe, High-Waisted Denim Shorts — Cutoff … +2 more
-[2] compare_prices
-      in:  {'listing_count': 5}
+      in:  {'description': 'graphic tee', 'size': 'XS', 'max_price': 30.0}
+      out: [] (empty)
+      →    empty; retrying once without size
+[2] search_listings (retry via MCP)
+      in:  {'description': 'graphic tee', 'size': None, 'max_price': 30.0}
+      out: 6 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Mesh Long-Sleeve Top — Black … +3 more
+      →    dropped size filter after empty first search
+[3] compare_prices (via MCP)
+      in:  dict with keys: listings…
       out: dict with keys: count, lowest, highest, average…
-[3] suggest_outfit
-      in:  {'item_id': 'lst_007'}
+[4] suggest_outfit
+      in:  {'item_id': 'lst_002'}
       out: unavailable
       →    model unavailable; stopping
 ```
@@ -561,13 +627,15 @@ silk button-down under $30: lst_029=$28.0, lst_014=$12.0, lst_020=$16.0
 
 **Did it help, and how do I know:**
 
-I cannot tell whether the prompt change helped because the after-run made no
-model-backed outfit or fit-card outputs. The agent stopped at `suggest_outfit`
-in every matching run. `python test.py` confirmed the API key is loaded, but
-its model-call check failed with `ConnectError: [Errno 8] nodename nor
-servname provided, or not known`. That means criteria 1 and 4 missed in this
-run; it does not show that the prompt itself worsened the output. The empty
-search, session handoff, and price-ceiling checks still passed 5/5.
+The first after-run missed criteria 1 and 4 because the model endpoint failed
+DNS resolution: `agent.py::run_agent` stopped at `suggest_outfit` for criterion
+1, and the `create_fit_card` call returned unavailable for criterion 4. No
+model output came back, so that run could not tell whether the prompt changed
+caption quality. After `test.py` passed with network access, the full live
+rerun below produced five same-item cards with five distinct opening sentences;
+all five before-run cards began with “Channeling.” The prompt change appears to
+have reduced the repeated opening pattern. Criterion 4's original
+length-and-detail target passed 5/5 both before and after.
 
 <!-- If it made things worse, say that. Honestly reported, that earns full
      credit and is more interesting than one that worked. -->
@@ -576,23 +644,95 @@ search, session handoff, and price-ceiling checks still passed 5/5.
 
 ---
 
+### Second Improvement — retry without size
+
+**Diagnosis:** Before the change, `search_listings("graphic tee", size="XS", max_price=30)` returned no items, while the same description and price ceiling without a size returned six. The `search_listings` tool's strict size filter produced the empty result; `run_agent` treated that as a total miss even though looser results existed in the data.
+
+```text
+tools.py::search_listings before retry:
+graphic tee XS []
+loose ['lst_002', 'lst_006', 'lst_017', 'lst_033', 'lst_011', 'lst_015']
+```
+
+**Change:** After an empty size-filtered MCP search, `agent.py::run_agent` makes exactly one more `search_listings` call with the same description and maximum price and `size=None`. It records the dropped size in the trace. I also moved the already-existing `compare_prices` call to MCP, as declared in the stretch plan above.
+
+### Run Log — After Second Improvement
+
+| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1. Matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before tool 2 | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Selected item ID reaches `suggest_outfit` unchanged | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Same-item fit card meets length and detail requirements | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Five capped queries return only listings at or below their ceiling | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+The final live, uncached five-try-per-criterion output is in
+[`results/run_2026-10-19_0035_after-retry-final.md`](results/run_2026-10-19_0035_after-retry-final.md).
+The run is produced by `run_eval.py::main`; each attempt calls
+`agent.py::run_agent` through `run_eval.py::run_once`.
+
+An initial attempt from the restricted shell is also recorded in
+[`results/run_2026-10-19_0027_after-retry.md`](results/run_2026-10-19_0027_after-retry.md);
+it hit the DNS error. After `test.py` passed with network access, I reran the
+same scenarios with live model calls. The table above reflects that final run.
+
+**Real output from the after-retry run:**
+
+```text
+Criterion 2 — Try 1:
+[1] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    empty; retrying once without size
+[2] search_listings (retry via MCP)
+      in:  {'description': 'designer ballgown', 'size': None, 'max_price': 5.0}
+      out: [] (empty)
+      →    dropped size filter after empty first search
+No listings matched 'designer ballgown' even after dropping size XXS. Try a higher price ceiling than $5 or a different item description.
+
+Criterion 1 — Try 1:
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 8 items: Graphic Tee — 2003 Tour Bootleg Style, Y2K Baby Tee — Butterfly Print, Vintage Graphic Hoodie — Faded Black … +5 more
+[2] compare_prices (via MCP)
+      in:  dict with keys: listings…
+      out: dict with keys: count, lowest, highest, average…
+[3] suggest_outfit
+      in:  {'item_id': 'lst_006', 'wardrobe_item_count': 10}
+      out: Here are two practical, wearable ways to style your new graphic tee using only items already in your wardrobe:…
+[4] create_fit_card
+      in:  {'item_id': 'lst_006'}
+      out: Worn-in tour merch meets off-duty skater grit when heavy cotton denim and fresh white kicks enter the chat. Th…
+
+Criterion 3 — Try 1:
+selected_item: Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+[3] suggest_outfit
+      in:  {'item_id': 'lst_006', 'wardrobe_item_count': 10}
+      out: **Outfit 1: 90s Streetwear Grunge** * **The Look:** Lean into the tee’s boxy fit and vintage vibe by pairing i…
+
+Criterion 4 — Try 1:
+Fit card: Slouchy 2003 tour merch paired with heavyweight denim and stompy black boots brings effortless, mosh-pit energy to a rainy Tuesday. The Graphic Tee — 2003 Tour Bootleg Style is listed for $24 on depop.
+
+Criterion 5 — returned listing prices:
+vintage graphic tee under $30: lst_006=$24.0, lst_002=$18.0, lst_015=$26.0, lst_017=$15.0, lst_033=$19.0, lst_011=$27.0, lst_012=$20.0, lst_030=$25.0
+90s track jacket under $50: lst_004=$45.0, lst_007=$42.0, lst_010=$40.0, lst_013=$30.0, lst_019=$48.0, lst_031=$36.0, lst_032=$33.0
+leather belt under $20: lst_014=$12.0
+denim jacket under $45: lst_007=$42.0, lst_004=$45.0, lst_016=$24.0, lst_032=$33.0, lst_038=$27.0
+silk button-down under $30: lst_029=$28.0, lst_014=$12.0, lst_020=$16.0
+```
+
+**Did it help:** Yes. The live `graphic tee size XS under $30` query changed from no size-specific results to six listings after dropping only the size filter; the $30 ceiling remained in effect. The latest full run met all five criteria at their stated targets. The earlier DNS-limited attempt is kept as a separate record and is superseded by the live run above.
+
+---
+
 ## What's Still Broken
 
-**Criterion 1 — matching query completes all three tools (MISSED, 0/5):** The
-failure occurred at the model-backed `suggest_outfit` step; the tool could not
-reach its model endpoint, so `create_fit_card` never ran. I would restore model
-connectivity and rerun all five matching queries. I stopped because
-`test.py::main` also failed its model check with `ConnectError: [Errno 8]
-nodename nor servname provided, or not known`; that points to DNS/network access,
-which I could not fix from this repository.
-
-**Criterion 4 — fit-card length and listing details (MISSED, 0/5):** The run
-reached `create_fit_card`, but its model request failed before it returned a
-card, so none of the five tries could be scored for sentence count, title,
-price, or platform. I would rerun the criterion after model connectivity is
-restored to see whether the new opening instruction reduced repetition. I
-stopped for the same DNS/network error; the failed calls provide no evidence
-that the prompt helped or hurt.
+The final live run (`results/run_2026-10-19_0035_after-retry-final.md`) met all
+five criteria, so no criterion is currently missed. The earlier restricted
+shell attempt failed at the model calls with a DNS `ConnectError`; I stopped
+that attempt there, ran `test.py` again with network access, and reran all 25
+tries successfully. The model-backed features still need a working network;
+that was an environment issue in the first attempt, not a remaining code fix.
 
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
@@ -617,7 +757,7 @@ that the prompt helped or hurt.
 
      SUBMISSION CHECKLIST — unit 4
 
-       [ ] mcp_server.py exists with one tool registered
+       [ ] mcp_server.py exists with both tools registered
            (or a written record of exactly where the rewire broke)
        [ ] Run Log — Before, five criteria, five tries each
        [ ] Real output pasted underneath, naming file and function
@@ -626,6 +766,8 @@ that the prompt helped or hurt.
        [ ] Loop Trace, with the MCP call visible in it
        [ ] All three failure modes triggered and handled
        [ ] One improvement, with Run Log — After in the same format
+       [ ] Second improvement, with a third five-try run log
+       [ ] Empty size search retries once with the size filter removed
        [ ] What's Still Broken
        [ ] At least four new commits
        [ ] The SAME repository URL as last unit
