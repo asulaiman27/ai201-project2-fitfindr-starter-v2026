@@ -19,7 +19,7 @@ import re
 import config
 import trace
 from tools import compare_prices, suggest_outfit, create_fit_card
-from mcp_client import call_tool
+from mcp_client import call_tool, MCPError
 from generate import ModelUnavailable
 
 
@@ -181,11 +181,28 @@ def run_agent(query: str, wardrobe: dict, *, remember_wardrobe: bool = False) ->
     # condition remains explicit if the loop gains another branch later.
     trace.check_iterations(1)
 
-    session["search_results"] = call_tool("search_listings", {
+    search_inputs = {
         "description": session["parsed"]["description"],
         "size": session["parsed"]["size"],
         "max_price": session["parsed"]["max_price"],
-    })
+    }
+    try:
+        session["search_results"] = call_tool("search_listings", search_inputs)
+    except MCPError:
+        session["error"] = (
+            "I couldn't reach the listings service right now. Please try again in a moment."
+        )
+        trace.step(
+            "search_listings (via MCP)", inputs=search_inputs,
+            returned="unavailable", note="service error; stopping",
+        )
+        return session
+
+    trace.step(
+        "search_listings (via MCP)", inputs=search_inputs,
+        returned=session["search_results"],
+        note="empty result; stopping" if not session["search_results"] else "",
+    )
     if not session["search_results"]:
         requested = session["parsed"]
         changes = []
@@ -202,19 +219,54 @@ def run_agent(query: str, wardrobe: dict, *, remember_wardrobe: bool = False) ->
         return session
 
     session["price_comparison"] = compare_prices(session["search_results"])
+    trace.step(
+        "compare_prices",
+        inputs={"listing_count": len(session["search_results"])},
+        returned=session["price_comparison"],
+    )
     session["selected_item"] = session["search_results"][0]
-    if session["wardrobe"].get("items"):
-        session["outfit_mode"] = "wardrobe"
+    wardrobe_items = session["wardrobe"].get("items", [])
+    session["outfit_mode"] = "wardrobe" if wardrobe_items else "general"
+    outfit_wardrobe = session["wardrobe"] if wardrobe_items else {"items": []}
+    try:
         session["outfit_suggestion"] = suggest_outfit(
-            session["selected_item"], session["wardrobe"]
+            session["selected_item"], outfit_wardrobe
         )
-    else:
-        session["outfit_mode"] = "general"
-        session["outfit_suggestion"] = suggest_outfit(
-            session["selected_item"], {"items": []}
+    except ModelUnavailable:
+        session["error"] = (
+            "I couldn't reach the model for outfit advice. Check your API key or connection and try again."
         )
-    session["fit_card"] = create_fit_card(
-        session["outfit_suggestion"], session["selected_item"]
+        trace.step(
+            "suggest_outfit", inputs={"item_id": session["selected_item"]["id"]},
+            returned="unavailable", note="model unavailable; stopping",
+        )
+        return session
+    trace.step(
+        "suggest_outfit",
+        inputs={
+            "item_id": session["selected_item"]["id"],
+            "wardrobe_item_count": len(wardrobe_items),
+        },
+        returned=session["outfit_suggestion"],
+    )
+
+    try:
+        session["fit_card"] = create_fit_card(
+            session["outfit_suggestion"], session["selected_item"]
+        )
+    except ModelUnavailable:
+        session["error"] = (
+            "I couldn't reach the model to finish the fit card. Check your API key or connection and try again."
+        )
+        trace.step(
+            "create_fit_card", inputs={"item_id": session["selected_item"]["id"]},
+            returned="unavailable", note="model unavailable; stopping",
+        )
+        return session
+    trace.step(
+        "create_fit_card",
+        inputs={"item_id": session["selected_item"]["id"]},
+        returned=session["fit_card"],
     )
     return session
 

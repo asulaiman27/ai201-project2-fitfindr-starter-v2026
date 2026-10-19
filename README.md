@@ -331,13 +331,29 @@ that produced it:
 **Happy path**
 
 ```
-
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 8 items: Graphic Tee — 2003 Tour Bootleg Style, Y2K Baby Tee — Butterfly Print, Vintage Graphic Hoodie — Faded Black … +5 more
+[2] compare_prices
+      in:  {'listing_count': 8}
+      out: dict with keys: count, lowest, highest, average…
+[3] suggest_outfit
+      in:  {'item_id': 'lst_006', 'wardrobe_item_count': 10}
+      out: Here are two ways to style your 2003 tour bootleg tee using items already in your closet:  ### Outfit 1: 90s G…
+[4] create_fit_card
+      in:  {'item_id': 'lst_006'}
+      out: Channel effortless 90s attitude by throwing this worn-in tour tee over baggy denim and chunky combat boots. Th…
 ```
 
 **Empty search**
 
 ```
+[1] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    empty result; stopping
 
+No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.
 ```
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
@@ -346,6 +362,42 @@ broke — the error text and the last thing that worked. That earns the point in
 full. -->
 
 
+
+`search_listings` is registered in `mcp_server.py`, and `run_agent()` calls it through `mcp_client.call_tool()`. `python mcp_client.py` listed the tool and its three typed inputs. A direct call and an MCP call returned the same native list of six listing dictionaries. The full CLI query completed with the MCP trace above.
+
+**Three failure checks**
+
+- **Empty search:** `python app.py ask 'designer ballgown size XXS under $5' --trace` returned: “No listings matched 'designer ballgown'. Try size XXS or a higher price ceiling than $5 or a different item description.” The trace stops after the empty MCP result.
+- **Empty wardrobe:** `python app.py ask 'denim jacket under $50' --empty-wardrobe --trace` completed without a crash or blank suggestion. It printed “Styling: general ideas because no wardrobe items are saved.” and returned general outfit advice.
+
+  ```text
+  Here are two wearable, high-contrast ways to style this cropped light-wash denim jacket:
+
+  **1. The 90s Streetwear Contrast**
+  * **The Look:** Pair the jacket with baggy, wide-leg dark bottoms (like black cargo pants or dark fatigue trousers) to play with proportions against the cropped, structured shoulders.
+  * **Details:** Layer it over a tight, ribbed white baby tee or a black crop top. Finish with chunky sneakers and a casual crossbody bag.
+
+  **2. The Texture Play**
+  * **The Look:** Throw it over a floral, slip-style midi dress in a darker color (like emerald green, burgundy, or black) to mix rugged denim with something delicate and fluid.
+  * **Details:** Ground the sweetness of the dress with chunky combat boots or retro leather loafers.
+
+  *Stylist Tip:* Because it’s a blank canvas, let the jacket's structure do the work—pop the collar slightly and push up the sleeves for an effortless, lived-in feel.
+  ```
+
+- **Model unavailable:** I temporarily changed one character in `.env`, ran the uncached query `denim jacket under $50`, then restored `.env` byte-for-byte. The agent printed “I couldn't reach the model for outfit advice. Check your API key or connection and try again.” The trace marked `suggest_outfit` unavailable and stopped; there was no raw stack trace.
+
+```text
+[1] search_listings (via MCP)
+      in:  {'description': 'denim jacket', 'size': None, 'max_price': 50.0}
+      out: 5 items: Denim Jacket — Light Wash, Cropped, 90s Track Jacket — Navy/White Stripe, High-Waisted Denim Shorts — Cutoff … +2 more
+[2] compare_prices
+      in:  {'listing_count': 5}
+      out: dict with keys: count, lowest, highest, average…
+[3] suggest_outfit
+      in:  {'item_id': 'lst_007'}
+      out: unavailable
+      →    model unavailable; stopping
+```
 
 ---
 
