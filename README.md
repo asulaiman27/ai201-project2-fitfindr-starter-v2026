@@ -107,6 +107,8 @@ wardrobe saved from an earlier run.
 
 **Where it lives:** `agent.py::run_agent`
 
+**MCP transport:** `run_agent()` asks `mcp_client.call_tool("search_listings", ...)` to run the registered tool in `mcp_server.py`. The client unwraps the response to the same list of listing dictionaries returned by `tools.search_listings()`.
+
 **Second branch (stretch):** If the wardrobe has items, request combinations using those owned pieces. If it is empty, request general styling advice and mark the session mode as `general`.
 
 **How the query is parsed:** Regular expressions extract an optional size and price ceiling; the remaining words become the search description.

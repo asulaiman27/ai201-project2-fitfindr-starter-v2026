@@ -18,7 +18,8 @@ import re
 
 import config
 import trace
-from tools import compare_prices, search_listings, suggest_outfit, create_fit_card
+from tools import compare_prices, suggest_outfit, create_fit_card
+from mcp_client import call_tool
 from generate import ModelUnavailable
 
 
@@ -180,11 +181,11 @@ def run_agent(query: str, wardrobe: dict, *, remember_wardrobe: bool = False) ->
     # condition remains explicit if the loop gains another branch later.
     trace.check_iterations(1)
 
-    session["search_results"] = search_listings(
-        session["parsed"]["description"],
-        size=session["parsed"]["size"],
-        max_price=session["parsed"]["max_price"],
-    )
+    session["search_results"] = call_tool("search_listings", {
+        "description": session["parsed"]["description"],
+        "size": session["parsed"]["size"],
+        "max_price": session["parsed"]["max_price"],
+    })
     if not session["search_results"]:
         requested = session["parsed"]
         changes = []
