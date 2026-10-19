@@ -249,6 +249,12 @@ Outfit: Here are two ways to style your new cropped light-wash denim jacket usin
 - *What came back:* It found the tools were still stubs, then added keyword search, model-backed outfit and fit-card tools, and the early-return branch.
 - *What I changed:* I recorded the ID passed into `suggest_outfit` and compared it with `session["selected_item"]["id"]`; I also checked that an impossible query leaves `fit_card` as `None` and gives a useful message.
 
+**Moment 3 — Unit 4**
+
+- *What I asked for:* I asked AI to compare repeated fit-card openings in the before run and choose one prompt improvement that followed that pattern.
+- *What came back:* It pointed out that the same-item captions repeatedly began with “Channeling,” and suggested asking for a fresh, distinctive opening and avoiding stock lead-ins.
+- *What I changed:* I updated only the prompt in `tools.py::create_fit_card`, then ran all 25 after-evaluation tries. The model connection failed with a DNS `ConnectError`, so I recorded the results as inconclusive for the prompt change instead of claiming it helped.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -418,7 +424,7 @@ full. -->
 
 
 
-`search_listings` is registered in `mcp_server.py`, and `run_agent()` calls it through `mcp_client.call_tool()`. `python mcp_client.py` listed the tool and its three typed inputs. A direct call and an MCP call returned the same native list of six listing dictionaries. The full CLI query completed with the MCP trace above.
+**What changed:** I replaced the direct `search_listings(...)` call in `agent.py::run_agent` with `mcp_client.call_tool("search_listings", ...)`; the tool is registered with its description and typed inputs in `mcp_server.py`. `python mcp_client.py` listed it, and the direct and MCP calls returned the same list of listing dictionaries. After the rewire, the end-to-end query still completed and its trace showed the MCP call; I saw no change in the result shape or agent behavior.
 
 **Three failure checks**
 
@@ -561,10 +567,21 @@ search, session handoff, and price-ceiling checks still passed 5/5.
 
 ## What's Still Broken
 
-The model endpoint could not be resolved during the after-run (`ConnectError`
-from `test.py::main`), so the prompt change still needs a live evaluation. Once
-the model connection works again, rerun `python run_eval.py --label after` and
-compare the five same-item openings with the before log.
+**Criterion 1 — matching query completes all three tools (MISSED, 0/5):** The
+failure occurred at the model-backed `suggest_outfit` step; the tool could not
+reach its model endpoint, so `create_fit_card` never ran. I would restore model
+connectivity and rerun all five matching queries. I stopped because
+`test.py::main` also failed its model check with `ConnectError: [Errno 8]
+nodename nor servname provided, or not known`; that points to DNS/network access,
+which I could not fix from this repository.
+
+**Criterion 4 — fit-card length and listing details (MISSED, 0/5):** The run
+reached `create_fit_card`, but its model request failed before it returned a
+card, so none of the five tries could be scored for sentence count, title,
+price, or platform. I would rerun the criterion after model connectivity is
+restored to see whether the new opening instruction reduced repetition. I
+stopped for the same DNS/network error; the failed calls provide no evidence
+that the prompt helped or hurt.
 
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
